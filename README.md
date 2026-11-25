@@ -44,6 +44,28 @@ Página para administrar las clases de canto de Barbi Ansztain: página pública
 - **Zoom**: en marketplace.zoom.us creá una app *Server-to-Server OAuth* con el permiso `meeting:write:meeting:admin` (o `meeting:write`), y copiá Account ID, Client ID y Client Secret. Sin estas claves, las clases online se guardan sin link.
 - **Plantilla de invitación** (Supabase → Authentication → Emails → Invite user): podés traducirla al español. El link usa `{{ .ConfirmationURL }}`.
 
-## Deploy
+## Deploy en Netlify (paso a paso)
 
-En Vercel: importá el repo, cargá las mismas variables de entorno (con `NEXT_PUBLIC_SITE_URL` = dominio real) y actualizá las URLs de Supabase y del webhook de Mercado Pago.
+1. **GitHub** — este repo: `Barbara-Ansztain/BA-VocalCoach`.
+2. **Netlify** → *Add new site* → *Import an existing project* → elegí el repo.
+3. Build: lo detecta solo (`npm run build`, publish `.next`). Node 22 ya está en `netlify.toml`.
+4. **Environment variables** → pegá una por una desde `.env.example` / tu `.env.local`:
+
+   | Variable | Dónde sacarla |
+   |---|---|
+   | `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Settings → API → Project URL |
+   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Idem → `anon` `public` |
+   | `SUPABASE_SERVICE_ROLE_KEY` | Idem → `service_role` (secreta) |
+   | `NEXT_PUBLIC_SITE_URL` | `https://tu-sitio.netlify.app` (o dominio custom, sin `/`) |
+   | `RESEND_API_KEY` | resend.com → API Keys |
+   | `EMAIL_FROM` | Mail con dominio verificado en Resend |
+   | `ADMIN_EMAIL` | Mail de Barbi (consultas) |
+   | `MP_ACCESS_TOKEN` | Mercado Pago → Credenciales |
+   | `MP_WEBHOOK_SECRET` | MP → Webhooks (ver paso 6) |
+   | `ZOOM_ACCOUNT_ID` / `ZOOM_CLIENT_ID` / `ZOOM_CLIENT_SECRET` | Zoom → Server-to-Server OAuth |
+
+5. **Deploy** el sitio.
+6. **Después del primer deploy**, actualizá:
+   - Supabase → Auth → URL Configuration: Site URL = dominio Netlify; Redirect URLs = `https://TU_DOMINIO/auth/confirm`
+   - Mercado Pago → Webhooks: `https://TU_DOMINIO/api/mercadopago/webhook` (evento Pagos) → copiá el secret a `MP_WEBHOOK_SECRET` y redeploy
+   - `NEXT_PUBLIC_SITE_URL` si usás dominio custom
