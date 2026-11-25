@@ -1,5 +1,6 @@
 import { createAdminClient } from "./supabase/server";
 import { hoyAR, type Plan } from "./reglas";
+import { profeActual } from "./profe";
 
 export type Precios = Record<Plan, number>;
 
@@ -24,8 +25,9 @@ export const CONFIG_INICIAL: Config = {
 };
 
 /** Precios por mes que cargó Barbi (de más viejo a más nuevo). */
-export async function getPeriodosPrecio(): Promise<PeriodoPrecio[]> {
-  const { data } = await createAdminClient().from("price_periods").select("*").order("desde");
+export async function getPeriodosPrecio(profe?: string): Promise<PeriodoPrecio[]> {
+  const id = profe ?? (await profeActual());
+  const { data } = await createAdminClient().from("price_periods").select("*").eq("profe_id", id).order("desde");
   return (data ?? []).map((p) => ({ desde: p.desde, precios: { suelta: p.precio_suelta, mensual_2: p.precio_mensual_2, mensual_4: p.precio_mensual_4 } }));
 }
 
@@ -35,17 +37,19 @@ function preciosEn(fecha: string, base: Precios, periodos: PeriodoPrecio[]): Pre
 }
 
 /** Precios que rigen en una fecha (YYYY-MM-DD) o un mes (YYYY-MM). */
-export async function getPrecios(fecha: string): Promise<Precios> {
-  const [cfg, periodos] = await Promise.all([getConfig(), getPeriodosPrecio()]);
+export async function getPrecios(fecha: string, profe?: string): Promise<Precios> {
+  const id = profe ?? (await profeActual());
+  const [cfg, periodos] = await Promise.all([getConfig(id), getPeriodosPrecio(id)]);
   return preciosEn(fecha.length === 7 ? `${fecha}-01` : fecha.slice(0, 10), cfg.preciosBase, periodos);
 }
 
 /** Reglas de Configuración, con los precios del mes en curso. */
-export async function getConfig(): Promise<Config> {
+export async function getConfig(profe?: string): Promise<Config> {
+  const id = profe ?? (await profeActual());
   const db = createAdminClient();
   const [{ data }, { data: periodos }] = await Promise.all([
-    db.from("settings").select("*").eq("id", 1).single(),
-    db.from("price_periods").select("*").lte("desde", hoyAR()).order("desde", { ascending: false }).limit(1),
+    db.from("settings").select("*").eq("profe_id", id).maybeSingle(),
+    db.from("price_periods").select("*").eq("profe_id", id).lte("desde", hoyAR()).order("desde", { ascending: false }).limit(1),
   ]);
   if (!data) return CONFIG_INICIAL;
   const base = { suelta: data.precio_suelta, mensual_2: data.precio_mensual_2, mensual_4: data.precio_mensual_4 };

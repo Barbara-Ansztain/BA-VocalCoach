@@ -33,14 +33,17 @@ export default async function Hoy() {
         </div>
         <Link data-tour="nueva-clase" href="/panel/agenda#nueva" className="btn-primario">+ Nueva clase</Link>
       </header>
-      <section data-tour="resumen" className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+      <section data-tour="resumen" className="grid grid-cols-3 gap-2.5 sm:gap-4 lg:grid-cols-4">
         {[["Clases hoy", clases?.length ?? 0], ["Pagos pendientes", pagos?.length ?? 0], ["Consultas nuevas", consultas?.length ?? 0]].map(([t, n]) => (
-          <div key={t} className="tarjeta p-5"><p className="text-sm">{t}</p><p className="mt-1 text-3xl font-bold sm:text-4xl">{n}</p></div>
+          <div key={t} className="tarjeta min-w-0 p-3.5 sm:p-5"><p className="text-xs leading-tight sm:text-sm">{t}</p><p className="mt-1 text-2xl font-bold sm:text-4xl">{n}</p></div>
         ))}
-        <div className="rounded-2xl bg-menta p-5"><p className="text-sm">Cobrado este mes</p><p className="mt-1 text-3xl font-bold sm:text-4xl">{formatoPesos(ingresos)}</p></div>
+        {/* El monto ocupa todo el ancho en celular para que nunca se salga de la tarjeta */}
+        <div className="col-span-3 min-w-0 rounded-2xl bg-menta p-3.5 sm:p-5 lg:col-span-1"><p className="text-xs sm:text-sm">Cobrado este mes</p><p className="mt-1 whitespace-nowrap text-[clamp(1.5rem,7vw,2.25rem)] font-bold lg:text-[clamp(1.5rem,2.4vw,2.25rem)]">{formatoPesos(ingresos)}</p></div>
       </section>
       <div className="flex flex-wrap items-start gap-6">
-        <section data-tour="agenda-hoy" className="tarjeta flex min-w-0 flex-[2_1_380px] flex-col gap-3">
+        {/* Columnas parejas: así no queda un hueco a la izquierda mientras la derecha obliga a bajar */}
+        <div className="flex min-w-0 flex-[2_1_380px] flex-col gap-6">
+        <section data-tour="agenda-hoy" className="tarjeta flex min-w-0 flex-col gap-3">
           <h2 className="font-serif font-normal text-2xl leading-tight sm:text-[28px]">Agenda de hoy</h2>
           {!clases?.length && <p>Hoy no tenés clases.</p>}
           {clases?.map((c) => (
@@ -49,13 +52,16 @@ export default async function Hoy() {
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-bold">{c.profiles?.full_name}</span>
                 <span className="block text-sm">{c.modality === "online" ? "Online" : "Presencial"}{c.nota ? ` · ${c.nota}` : ""}</span>
+                {c.status !== "reservada" && <span className="mt-1 block sm:hidden"><Estado valor={c.status} /></span>}
               </span>
-              {c.status !== "reservada" && <Estado valor={c.status} />}
+              {c.status !== "reservada" && <span className="hidden sm:block"><Estado valor={c.status} /></span>}
               <span aria-hidden="true" className="text-xl text-ciruela/40">›</span>
             </Link>
           ))}
           <p className="text-[13px]">Tocá una clase para marcar asistencia, moverla o cancelarla.</p>
         </section>
+        <Recordatorios items={recordatorios ?? []} alumnos={alumnos ?? []} />
+        </div>
         <div className="flex flex-[1_1_280px] flex-col gap-6">
           <section data-tour="cobros" className="tarjeta flex flex-col gap-3.5">
             <h2 className="font-serif font-normal text-2xl leading-tight sm:text-[28px]">Pagos por cobrar</h2>
@@ -71,7 +77,6 @@ export default async function Hoy() {
             ))}
             <Link href="/panel/pagos" className="text-sm font-bold">Ver todos →</Link>
           </section>
-          <Recordatorios items={recordatorios ?? []} alumnos={alumnos ?? []} />
           <section className="flex flex-col gap-3 rounded-2xl bg-lila-suave p-6">
             <h2 className="font-serif font-normal text-2xl leading-tight sm:text-[28px]">Consultas nuevas</h2>
             {!consultas?.length && <p className="text-sm">No hay consultas nuevas.</p>}

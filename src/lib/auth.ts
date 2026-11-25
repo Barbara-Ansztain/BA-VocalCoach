@@ -1,4 +1,6 @@
+import { cache } from "react";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 import { createClient } from "./supabase/server";
 
 export type Perfil = {
@@ -17,17 +19,21 @@ export type Perfil = {
   notes: string | null;
   tyc_accepted_at: string | null;
   tour_completed_at: string | null;
+  profe_id: string | null;
   active: boolean;
   created_at: string;
 };
 
-export async function getPerfil() {
+/** Una sola consulta por pedido (layout y página la comparten). getClaims valida el token sin ir a Supabase Auth cuando puede. */
+export const getPerfil = cache(async () => {
+  await connection(); // depende de la sesión: siempre se calcula en el pedido, nunca al armar la página
   const supabase = await createClient();
-  const { data: auth } = await supabase.auth.getUser();
-  if (!auth.user) return null;
-  const { data } = await supabase.from("profiles").select("*").eq("user_id", auth.user.id).single();
+  const { data: auth } = await supabase.auth.getClaims();
+  const userId = auth?.claims?.sub;
+  if (!userId) return null;
+  const { data } = await supabase.from("profiles").select("*").eq("user_id", userId).single();
   return (data as Perfil) ?? null;
-}
+});
 
 export async function requireAdmin() {
   const perfil = await getPerfil();

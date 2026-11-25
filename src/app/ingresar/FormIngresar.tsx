@@ -10,7 +10,7 @@ export function FormIngresar({ next }: { next: string }) {
   return (
     <form action={accion} className="tarjeta flex flex-col gap-4">
       <input type="hidden" name="next" value={next} />
-      <label className="etiqueta">Mail<input name="email" type="email" required className="campo" autoComplete="email" /></label>
+      <label className="etiqueta">Mail o usuario<input name="email" type="text" required className="campo" autoComplete="username" autoCapitalize="none" /></label>
       {modo === "login" && (
         <label className="etiqueta">Contraseña<CampoContrasena /></label>
       )}

@@ -6,6 +6,7 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import { formatoPesos, hoyAR } from "@/lib/reglas";
 import { getConfig, getPeriodosPrecio } from "@/lib/config";
+import { profePrincipal } from "@/lib/profe";
 import { tycSecciones } from "@/lib/tyc";
 import { createAdminClient } from "@/lib/supabase/server";
 
@@ -15,10 +16,11 @@ const DIAS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "
 async function Consulta() {
   await connection();
   const db = createAdminClient();
+  const profe = await profePrincipal();
   const [cfg, periodos, { data: disp }] = await Promise.all([
-    getConfig(),
-    getPeriodosPrecio(),
-    db.from("availability").select("weekday, start_time, biweekly").eq("active", true).order("weekday").order("start_time"),
+    getConfig(profe),
+    getPeriodosPrecio(profe),
+    db.from("availability").select("weekday, start_time, biweekly").eq("profe_id", profe).eq("active", true).order("weekday").order("start_time"),
   ]);
   const porDia = Map.groupBy(disp ?? [], (d) => d.weekday);
   return (

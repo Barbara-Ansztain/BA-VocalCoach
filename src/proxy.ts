@@ -1,9 +1,9 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-// Edge middleware (no proxy.ts): Netlify aún falla al empaquetar Node Proxy + Turbopack.
-// Refresca la sesión y bloquea panel/alumno sin login. Auth real: requireAdmin / requireAlumno.
-export async function middleware(request: NextRequest) {
+// Refresca la sesión y hace un chequeo optimista: sin sesión no se entra al panel ni al área de alumnos.
+// La autorización real (admin vs alumno) se valida en cada página/acción con requireAdmin / requireAlumno.
+export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -21,8 +21,8 @@ export async function middleware(request: NextRequest) {
     },
   );
 
-  const { data } = await supabase.auth.getUser();
-  if (!data.user) {
+  const { data } = await supabase.auth.getClaims();
+  if (!data?.claims) {
     const url = request.nextUrl.clone();
     url.pathname = "/ingresar";
     url.searchParams.set("next", request.nextUrl.pathname);

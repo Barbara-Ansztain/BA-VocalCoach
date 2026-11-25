@@ -1,0 +1,26 @@
+{
+  "node": {
+    "00d6a6b27fb5856a388a8527e3a6a2066ec35a4ffa": {
+      "workers": {
+        "app/primer-uso/page": {
+          "moduleId": "[project]/.next-internal/server/app/primer-uso/page/actions.js { ACTIONS_MODULE0 => \"[project]/src/app/actions/primer-uso.ts [app-rsc] (ecmascript)\" } [app-rsc] (server actions loader, ecmascript)",
+          "async": false
+        }
+      },
+      "filename": "src/app/actions/primer-uso.ts",
+      "exportedName": "hayAdmin"
+    },
+    "60fe843bc69378e8b095de1fe028abab7e827a1631": {
+      "workers": {
+        "app/primer-uso/page": {
+          "moduleId": "[project]/.next-internal/server/app/primer-uso/page/actions.js { ACTIONS_MODULE0 => \"[project]/src/app/actions/primer-uso.ts [app-rsc] (ecmascript)\" } [app-rsc] (server actions loader, ecmascript)",
+          "async": false
+        }
+      },
+      "filename": "src/app/actions/primer-uso.ts",
+      "exportedName": "crearAdmin"
+    }
+  },
+  "edge": {},
+  "encryptionKey": "adgVMNHmVgni1DJCX6ViblS2GRT0L4+iq/oOJTqYb5w="
+}

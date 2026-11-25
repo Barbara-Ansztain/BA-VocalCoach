@@ -1,8 +1,18 @@
-import { Resend } from "resend";
+import nodemailer from "nodemailer";
 import { fechaHora } from "./reglas";
 
-const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
-const FROM = process.env.EMAIL_FROM ?? "BA - Vocal Coach <onboarding@resend.dev>";
+// Los mails salen por Gmail (o cualquier SMTP) con una "contraseña de aplicación".
+// SMTP_USER = la cuenta (ej. bavocalcoach@gmail.com), SMTP_PASS = la contraseña de aplicación de 16 letras.
+const usuario = process.env.SMTP_USER;
+const transporte = usuario && process.env.SMTP_PASS
+  ? nodemailer.createTransport({
+      host: process.env.SMTP_HOST || "smtp.gmail.com",
+      port: Number(process.env.SMTP_PORT || 465),
+      secure: Number(process.env.SMTP_PORT || 465) === 465,
+      auth: { user: usuario, pass: process.env.SMTP_PASS },
+    })
+  : null;
+const FROM = `"BA - Vocal Coach" <${usuario}>`;
 
 function plantilla(titulo: string, cuerpo: string) {
   return `<div style="font-family:Arial,sans-serif;background:#F5EFE6;padding:32px;color:#49304F">
@@ -15,11 +25,11 @@ function plantilla(titulo: string, cuerpo: string) {
 
 async function enviar(to: string | null | undefined, subject: string, html: string) {
   if (!to) return;
-  if (!resend) {
-    console.warn("[email] RESEND_API_KEY no configurada; no se envió:", subject, "→", to);
+  if (!transporte) {
+    console.warn("[email] Falta SMTP_USER / SMTP_PASS; no se envió:", subject, "→", to);
     return;
   }
-  await resend.emails.send({ from: FROM, to, subject, html });
+  await transporte.sendMail({ from: FROM, to, subject, html, replyTo: process.env.ADMIN_EMAIL || undefined });
 }
 
 /** Aviso de agenda al reservar o reprogramar. Si es online lleva el link de Zoom. */

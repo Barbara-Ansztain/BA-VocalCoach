@@ -27,3 +27,12 @@ body {
 @utility etiqueta { @apply flex flex-col gap-1.5 text-sm font-medium; }
 @utility chip { @apply inline-block whitespace-nowrap rounded-full px-3 py-1 text-xs; }
 
+
+/* Loader: notas que saltan sobre el pentagrama */
+@keyframes nota-salto {
+  0%, 55%, 100% { transform: translateY(0); opacity: 0.55; }
+  20% { transform: translateY(-18px); opacity: 1; }
+  32% { transform: translateY(-18px); opacity: 1; }
+}
+.nota-salto { animation: nota-salto 1.6s cubic-bezier(.45,.05,.35,1) infinite; opacity: .55; }
+@media (prefers-reduced-motion: reduce) { .nota-salto { animation-duration: 3.2s; } }

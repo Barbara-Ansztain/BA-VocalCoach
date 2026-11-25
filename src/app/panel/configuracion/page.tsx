@@ -29,15 +29,25 @@ export default async function Configuracion() {
         <section className="tarjeta flex flex-[1_1_360px] flex-col gap-3">
           <h2 className="font-serif text-xl sm:text-2xl">Horarios que ofrecés</h2>
           <p className="text-sm">Son los horarios de clase de la semana. Los que no ocupa ningún alumno fijo (o que se liberan por una cancelación) los pueden reservar los alumnos.</p>
-          {horarios?.map((h) => (
-            <form key={h.id} action={quitarHorario} className="flex items-center justify-between border-b border-arena pb-2.5">
-              <input type="hidden" name="id" value={h.id} />
-              <span><strong>{DIAS[h.weekday]}</strong> · {h.start_time.slice(0, 5)}{h.biweekly ? " (cada 15 días)" : ""}</span>
-              <button className="text-sm underline">Quitar</button>
-            </form>
-          ))}
+          {/* Un renglón por día con sus horas como chips: entra todo sin hacer bajar la página */}
+          <div className="flex flex-col divide-y divide-arena">
+            {[...Map.groupBy(horarios ?? [], (h) => h.weekday)].map(([dia, hs]) => (
+              <div key={dia} className="flex flex-col gap-2 py-2.5 sm:flex-row sm:items-start sm:gap-4">
+                <strong className="w-24 shrink-0 pt-1">{DIAS[dia]}</strong>
+                <div className="flex flex-wrap gap-1.5">
+                  {hs.map((h) => (
+                    <form key={h.id} action={quitarHorario} className="flex items-center gap-1 rounded-full bg-crema py-1 pl-3 pr-1 text-sm">
+                      <input type="hidden" name="id" value={h.id} />
+                      <span>{h.start_time.slice(0, 5)}{h.biweekly ? " · c/15 días" : ""}</span>
+                      <button aria-label={`Quitar ${DIAS[dia]} ${h.start_time.slice(0, 5)}`} title="Quitar" className="flex size-6 items-center justify-center rounded-full text-ciruela/60 hover:bg-arena hover:text-ciruela">×</button>
+                    </form>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
           <FormAccion action={agregarHorario} className="flex flex-wrap items-end gap-3 pt-2">
-            <label className="etiqueta">Día<select name="dia" className="campo">{DIAS.map((d, i) => <option key={d} value={i}>{d}</option>)}</select></label>
+            <label className="etiqueta">Día<select name="dia" defaultValue="1" className="campo">{DIAS.map((d, i) => <option key={d} value={i}>{d}</option>)}</select></label>
             <label className="etiqueta">Hora<input type="time" name="hora" required className="campo" /></label>
             <label className="flex items-center gap-2 pb-3"><input type="checkbox" name="quincenal" className="size-5 accent-petroleo" /> Cada 15 días</label>
             <label className="etiqueta">Desde (si es quincenal)<input type="date" name="desde" className="campo" /></label>

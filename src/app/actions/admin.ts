@@ -2,7 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
-import { createAdminClient } from "@/lib/supabase/server";
+import { createAdminClient, createClient } from "@/lib/supabase/server";
+
+/** Cliente con los permisos de la profe logueada: las reglas de Supabase lo limitan a sus propios datos.
+ *  (createAdminClient queda solo para invitar cuentas, archivos y generar clases.) */
+const dbProfe = () => createClient();
 import { duracionEntre, sumarMinutos, DURACION_CLASE_MIN, hora, hoyAR, OFFSET, periodoActual, recargoCuota, type Plan } from "@/lib/reglas";
 import { getConfig, getPrecios } from "@/lib/config";
 import { borrarReunionZoom, crearReunionZoom } from "@/lib/zoom";
@@ -17,7 +21,7 @@ export async function marcarClase(form: FormData) {
   await requireAdmin();
   const estado = s(form, "estado");
   if (!["asistio", "perdida", "cancelada", "reservada"].includes(estado)) return;
-  await createAdminClient().from("lessons").update({ status: estado }).eq("id", s(form, "id"));
+  await (await dbProfe()).from("lessons").update({ status: estado }).eq("id", s(form, "id"));
   revalidatePath("/panel", "layout");
 }
 
@@ -25,19 +29,19 @@ export async function marcarClase(form: FormData) {
 async function insertarAlumno(form: FormData, horario?: { dia: number; hora: string; duracion?: number }) {
   const nombre = s(form, "nuevo_nombre") || s(form, "nombre");
   if (!nombre) return { error: "Escribí el nombre del alumno." as const };
-  const { data, error } = await createAdminClient().from("profiles").insert({
+  const { data, error } = await (await dbProfe()).from("profiles").insert({
     full_name: nombre, phone: s(form, "nuevo_telefono") || s(form, "telefono") || null,
     email: (s(form, "nuevo_email") || s(form, "email")).toLowerCase() || null,
     plan: s(form, "nuevo_plan") || s(form, "plan") || "suelta", modality: s(form, "nuevo_modalidad") || s(form, "modalidad") || "presencial",
   }).select().single();
   if (error || !data) return { error: "No se pudo crear el alumno." as const };
-  if (horario) await createAdminClient().from("student_slots").insert({ student_id: data.id, weekday: horario.dia, start_time: horario.hora, duration_min: horario.duracion ?? 60 });
+  if (horario) await (await dbProfe()).from("student_slots").insert({ student_id: data.id, weekday: horario.dia, start_time: horario.hora, duration_min: horario.duracion ?? 60 });
   return { alumno: data };
 }
 
 export async function crearClase(_: Resultado, form: FormData): Promise<Resultado> {
   await requireAdmin();
-  const db = createAdminClient();
+  const db = await dbProfe();
   const fecha = s(form, "fecha"), hora = s(form, "hora");
   const duracion = duracionEntre(hora, s(form, "hasta"));
   const inicio = `${fecha}T${hora}:00${OFFSET}`;
@@ -87,21 +91,21 @@ export async function bloquearHorario(_: Resultado, form: FormData): Promise<Res
     filas.push({ starts_at: `${d}T${hDesde}:00${OFFSET}`, ends_at: fin, reason: s(form, "motivo") || null });
     if (filas.length > 120) return { error: "El rango es demasiado largo." };
   }
-  await createAdminClient().from("blocked_slots").insert(filas);
+  await (await dbProfe()).from("blocked_slots").insert(filas);
   revalidatePath("/panel/agenda");
   return { ok: filas.length === 1 ? "Horario bloqueado." : `Bloqueado en ${filas.length} días.` };
 }
 
 export async function desbloquear(form: FormData) {
   await requireAdmin();
-  await createAdminClient().from("blocked_slots").delete().eq("id", s(form, "id"));
+  await (await dbProfe()).from("blocked_slots").delete().eq("id", s(form, "id"));
   revalidatePath("/panel/agenda");
 }
 
 // ───────── Pagos ─────────
 export async function confirmarPago(form: FormData) {
   await requireAdmin();
-  const db = createAdminClient();
+  const db = await dbProfe();
   const { data: p } = await db.from("payments").select("*").eq("id", s(form, "id")).single();
   if (!p) return;
   const metodo = s(form, "metodo") || p.method || "efectivo";
@@ -112,14 +116,14 @@ export async function confirmarPago(form: FormData) {
 
 export async function rechazarComprobante(form: FormData) {
   await requireAdmin();
-  await createAdminClient().from("payments").update({ status: "pendiente", method: null }).eq("id", s(form, "id"));
+  await (await dbProfe()).from("payments").update({ status: "pendiente", method: null }).eq("id", s(form, "id"));
   revalidatePath("/panel/pagos");
 }
 
 /** Crea las cuotas del mes para cada alumno con plan mensual que todavía no la tenga. */
 export async function generarCuotas(form: FormData) {
   await requireAdmin();
-  const db = createAdminClient();
+  const db = await dbProfe();
   const elegido = s(form, "periodo");
   const periodo = /^\d{4}-\d{2}$/.test(elegido) ? elegido : periodoActual();
   const { data: alumnos } = await db.from("profiles").select("id, plan").eq("role", "alumno").eq("active", true).neq("plan", "suelta");
@@ -144,15 +148,16 @@ async function invitar(email: string, nombre: string) {
 
 /** Consulta nueva → alumno: si ya existe un alumno con ese mail se vincula; si no, se crea el perfil. */
 export async function darAcceso(form: FormData) {
-  await requireAdmin();
-  const db = createAdminClient();
+  const yo = await requireAdmin();
+  const db = await dbProfe();
   const { data: c } = await db.from("consultations").select("*").eq("id", s(form, "id")).single();
   if (!c) return;
   const { data, error } = await invitar(c.email, c.name);
   if (error || !data.user) { console.error(error); return; }
-  await db.from("profiles").update({
+  // La cuenta nueva puede haber nacido sin profe: se la asigna a la profe que da el acceso
+  await createAdminClient().from("profiles").update({
     full_name: c.name, phone: c.phone, modality: c.modality === "Online" ? "online" : "presencial",
-    plan: (s(form, "plan") || "suelta") as Plan,
+    plan: (s(form, "plan") || "suelta") as Plan, profe_id: yo.profe_id,
   }).eq("user_id", data.user.id);
   await db.from("consultations").update({ status: "alumno" }).eq("id", c.id);
   revalidatePath("/panel", "layout");
@@ -161,7 +166,7 @@ export async function darAcceso(form: FormData) {
 /** Alumno cargado sin cuenta: le manda el mail para crear su contraseña. */
 export async function invitarAlumno(_: Resultado, form: FormData): Promise<Resultado> {
   await requireAdmin();
-  const db = createAdminClient();
+  const db = await dbProfe();
   const { data: a } = await db.from("profiles").select("*").eq("id", s(form, "id")).single();
   if (!a) return { error: "No encontramos al alumno." };
   if (!a.email) return { error: "Primero cargá su mail en la ficha y guardá." };
@@ -174,13 +179,13 @@ export async function invitarAlumno(_: Resultado, form: FormData): Promise<Resul
 
 export async function estadoConsulta(form: FormData) {
   await requireAdmin();
-  await createAdminClient().from("consultations").update({ status: s(form, "estado") }).eq("id", s(form, "id"));
+  await (await dbProfe()).from("consultations").update({ status: s(form, "estado") }).eq("id", s(form, "id"));
   revalidatePath("/panel", "layout");
 }
 
 export async function guardarAlumno(_: Resultado, form: FormData): Promise<Resultado> {
   await requireAdmin();
-  const { error } = await createAdminClient().from("profiles").update({
+  const { error } = await (await dbProfe()).from("profiles").update({
     full_name: s(form, "nombre"), email: s(form, "email").toLowerCase() || null, phone: s(form, "telefono") || null,
     plan: s(form, "plan"), modality: s(form, "modalidad"),
     notes: s(form, "notas") || null, active: form.get("activo") === "on",
@@ -193,10 +198,10 @@ export async function guardarAlumno(_: Resultado, form: FormData): Promise<Resul
 /** Crea las clases de horario fijo de las próximas 6 semanas (y los links de Zoom de las online). */
 export async function generarClases(): Promise<Resultado> {
   await requireAdmin();
-  const db = createAdminClient();
+  const db = await dbProfe();
   const desde = hoyAR();
   const hasta = new Date(Date.parse(desde) + 42 * 86_400_000).toISOString().slice(0, 10);
-  const { data: n, error } = await db.rpc("generate_lessons", { p_from: desde, p_to: hasta });
+  const { data: n, error } = await createAdminClient().rpc("generate_lessons", { p_from: desde, p_to: hasta });
   if (error) return { error: "No se pudieron generar las clases." };
   const { data: online } = await db.from("lessons").select("id, starts_at, profiles(full_name)")
     .eq("modality", "online").eq("status", "reservada").is("zoom_join_url", null).gte("starts_at", desde);
@@ -217,14 +222,14 @@ export async function agregarNota(_: Resultado, form: FormData): Promise<Resulta
   await requireAdmin();
   const cuerpo = s(form, "nota");
   if (!cuerpo) return { error: "Escribí la nota." };
-  await createAdminClient().from("lesson_notes").insert({ student_id: s(form, "id"), body: cuerpo });
+  await (await dbProfe()).from("lesson_notes").insert({ student_id: s(form, "id"), body: cuerpo });
   revalidatePath("/panel/alumnos", "layout");
   return { ok: "Nota guardada." };
 }
 
 export async function comentarGrabacion(_: Resultado, form: FormData): Promise<Resultado> {
   await requireAdmin();
-  await createAdminClient().from("recordings").update({ comment: s(form, "comentario"), commented_at: new Date().toISOString() }).eq("id", s(form, "id"));
+  await (await dbProfe()).from("recordings").update({ comment: s(form, "comentario"), commented_at: new Date().toISOString() }).eq("id", s(form, "id"));
   revalidatePath("/panel/alumnos", "layout");
   return { ok: "Comentario enviado." };
 }
@@ -232,12 +237,12 @@ export async function comentarGrabacion(_: Resultado, form: FormData): Promise<R
 // ───────── Material ─────────
 export async function subirMaterial(_: Resultado, form: FormData): Promise<Resultado> {
   await requireAdmin();
-  const db = createAdminClient();
+  const db = await dbProfe();
   const archivo = form.get("archivo");
   let ruta: string | null = null;
   if (archivo instanceof File && archivo.size > 0) {
     ruta = `${Date.now()}-${archivo.name.replace(/[^\w.-]/g, "_")}`;
-    const { error } = await db.storage.from("material").upload(ruta, archivo, { contentType: archivo.type });
+    const { error } = await createAdminClient().storage.from("material").upload(ruta, archivo, { contentType: archivo.type });
     if (error) return { error: "No se pudo subir el archivo." };
   }
   const url = s(form, "url") || null;
@@ -252,7 +257,7 @@ export async function asignarMaterial(_: Resultado, form: FormData): Promise<Res
   const material = s(form, "material");
   const alumnos = form.getAll("alumnos").map(String);
   if (!material || alumnos.length === 0) return { error: "Elegí material y alumnos." };
-  await createAdminClient().from("material_assignments").upsert(alumnos.map((a) => ({ material_id: material, student_id: a })), { ignoreDuplicates: true });
+  await (await dbProfe()).from("material_assignments").upsert(alumnos.map((a) => ({ material_id: material, student_id: a })), { ignoreDuplicates: true });
   revalidatePath("/panel", "layout");
   return { ok: "Asignado." };
 }
@@ -261,7 +266,7 @@ export async function asignarMaterial(_: Resultado, form: FormData): Promise<Res
 export async function agregarHorario(_: Resultado, form: FormData): Promise<Resultado> {
   await requireAdmin();
   const quincenal = form.get("quincenal") === "on";
-  await createAdminClient().from("availability").insert({
+  await (await dbProfe()).from("availability").insert({
     weekday: Number(s(form, "dia")), start_time: s(form, "hora"), biweekly: quincenal, biweekly_anchor: quincenal ? s(form, "desde") || null : null,
   });
   revalidatePath("/panel/configuracion");
@@ -270,52 +275,52 @@ export async function agregarHorario(_: Resultado, form: FormData): Promise<Resu
 
 export async function quitarHorario(form: FormData) {
   await requireAdmin();
-  await createAdminClient().from("availability").update({ active: false }).eq("id", s(form, "id"));
+  await (await dbProfe()).from("availability").update({ active: false }).eq("id", s(form, "id"));
   revalidatePath("/panel/configuracion");
 }
 
 export async function agregarFeriado(_: Resultado, form: FormData): Promise<Resultado> {
-  await requireAdmin();
-  await createAdminClient().from("holidays").upsert({ date: s(form, "fecha"), name: s(form, "nombre") || "Feriado" });
+  const yo = await requireAdmin();
+  await (await dbProfe()).from("holidays").upsert({ profe_id: yo.profe_id, date: s(form, "fecha"), name: s(form, "nombre") || "Feriado" });
   revalidatePath("/panel", "layout");
   return { ok: "Feriado agregado." };
 }
 
 export async function quitarFeriado(form: FormData) {
   await requireAdmin();
-  await createAdminClient().from("holidays").delete().eq("date", s(form, "fecha"));
+  await (await dbProfe()).from("holidays").delete().eq("date", s(form, "fecha"));
   revalidatePath("/panel", "layout");
 }
 
 export async function guardarConfig(_: Resultado, form: FormData): Promise<Resultado> {
-  await requireAdmin();
+  const yo = await requireAdmin();
   const n = (k: string) => Number(s(form, k).replace(/\D/g, ""));
   const datos = {
     precio_suelta: n("suelta"), precio_mensual_2: n("mensual_2"), precio_mensual_4: n("mensual_4"),
     recargo_pct: n("recargo"), dia_vencimiento: n("vencimiento"), horas_aviso: n("aviso"), updated_at: new Date().toISOString(),
   };
   if ([datos.precio_suelta, datos.precio_mensual_2, datos.precio_mensual_4].some((x) => !x)) return { error: "Revisá los precios." };
-  const { error } = await createAdminClient().from("settings").update(datos).eq("id", 1);
+  const { error } = await (await dbProfe()).from("settings").upsert({ profe_id: yo.profe_id, ...datos });
   revalidatePath("/", "layout");
   return error ? { error: "No se pudo guardar. Revisá los valores." } : { ok: "Guardado. Los precios nuevos se usan en las cuotas y clases que se generen desde ahora, en la página pública y en los términos." };
 }
 
 // ───────── Precios por mes ─────────
 export async function guardarPrecioMes(_: Resultado, form: FormData): Promise<Resultado> {
-  await requireAdmin();
+  const yo = await requireAdmin();
   const mes = s(form, "mes"); // YYYY-MM
   const n = (k: string) => Number(s(form, k).replace(/\D/g, ""));
   if (!/^\d{4}-\d{2}$/.test(mes)) return { error: "Elegí el mes." };
-  const fila = { desde: `${mes}-01`, precio_suelta: n("suelta"), precio_mensual_2: n("mensual_2"), precio_mensual_4: n("mensual_4") };
+  const fila = { profe_id: yo.profe_id, desde: `${mes}-01`, precio_suelta: n("suelta"), precio_mensual_2: n("mensual_2"), precio_mensual_4: n("mensual_4") };
   if (!fila.precio_suelta || !fila.precio_mensual_2 || !fila.precio_mensual_4) return { error: "Completá los tres precios." };
-  const { error } = await createAdminClient().from("price_periods").upsert(fila);
+  const { error } = await (await dbProfe()).from("price_periods").upsert(fila);
   revalidatePath("/", "layout");
   return error ? { error: "No se pudo guardar." } : { ok: "Precios guardados. Rigen desde ese mes en adelante, hasta que cargues otros." };
 }
 
 export async function borrarPrecioMes(form: FormData) {
   await requireAdmin();
-  await createAdminClient().from("price_periods").delete().eq("desde", s(form, "desde"));
+  await (await dbProfe()).from("price_periods").delete().eq("desde", s(form, "desde"));
   revalidatePath("/", "layout");
 }
 
@@ -324,7 +329,7 @@ const finDelDia = (f: string) => `${f}T23:59:59${OFFSET}`;
 
 export async function pausarAlumno(_: Resultado, form: FormData): Promise<Resultado> {
   await requireAdmin();
-  const db = createAdminClient();
+  const db = await dbProfe();
   const id = s(form, "id"), desde = s(form, "desde"), hasta = s(form, "hasta") || null, motivo = s(form, "motivo") || "Descanso";
   if (!desde || (hasta && hasta < desde)) return { error: "Revisá las fechas." };
   await db.from("pausas").insert({ student_id: id, desde, hasta, motivo });
@@ -342,7 +347,7 @@ export async function pausarAlumno(_: Resultado, form: FormData): Promise<Result
 
 export async function quitarPausa(form: FormData) {
   await requireAdmin();
-  const db = createAdminClient();
+  const db = await dbProfe();
   const { data: p } = await db.from("pausas").select("*").eq("id", s(form, "id")).single();
   if (!p) return;
   await db.from("pausas").delete().eq("id", p.id);
@@ -351,26 +356,26 @@ export async function quitarPausa(form: FormData) {
   await db.from("lessons").delete().eq("student_id", p.student_id).eq("status", "cancelada").like("nota", "Pausa:%")
     .gte("starts_at", `${p.desde}T00:00:00${OFFSET}`).lte("starts_at", finDelDia(hasta));
   const desde = p.desde > hoyAR() ? p.desde : hoyAR();
-  if (desde <= hasta) await db.rpc("generate_lessons", { p_from: desde, p_to: hasta });
+  if (desde <= hasta) await createAdminClient().rpc("generate_lessons", { p_from: desde, p_to: hasta });
   revalidatePath("/panel", "layout");
 }
 
 // ───────── Días extra con clases (excepciones, ej. sábados de diciembre) ─────────
 export async function agregarDiaExtra(_: Resultado, form: FormData): Promise<Resultado> {
-  await requireAdmin();
+  const yo = await requireAdmin();
   const desde = s(form, "desde"), hasta = s(form, "hasta") || desde, dia = s(form, "dia");
   const hIni = s(form, "hora_desde"), hFin = s(form, "hora_hasta") || hIni;
   if (!desde || hasta < desde) return { error: "Revisá las fechas." };
   if (!hIni || hFin < hIni) return { error: "Revisá los horarios." };
   const horas: string[] = [];
   for (let h = hIni; h <= hFin; h = sumarMinutos(h, 60)) { horas.push(h); if (h >= "23:00") break; }
-  const filas: { fecha: string; start_time: string }[] = [];
+  const filas: { profe_id: string | null; fecha: string; start_time: string }[] = [];
   for (let f = desde; f <= hasta; f = sumarDias(f, 1)) {
     if (dia !== "" && new Date(f + "T12:00:00Z").getUTCDay() !== Number(dia)) continue;
-    for (const h of horas) filas.push({ fecha: f, start_time: h });
+    for (const h of horas) filas.push({ profe_id: yo.profe_id, fecha: f, start_time: h });
   }
   if (!filas.length) return { error: "En esas fechas no hay ningún día como el que elegiste." };
-  const { error } = await createAdminClient().from("horarios_extra").upsert(filas, { onConflict: "fecha,start_time", ignoreDuplicates: true });
+  const { error } = await (await dbProfe()).from("horarios_extra").upsert(filas, { onConflict: "profe_id,fecha,start_time", ignoreDuplicates: true });
   revalidatePath("/panel", "layout");
   revalidatePath("/alumno", "layout");
   const dias = new Set(filas.map((x) => x.fecha)).size;
@@ -379,7 +384,7 @@ export async function agregarDiaExtra(_: Resultado, form: FormData): Promise<Res
 
 export async function quitarDiaExtra(form: FormData) {
   await requireAdmin();
-  const db = createAdminClient();
+  const db = await dbProfe();
   if (s(form, "id")) await db.from("horarios_extra").delete().eq("id", s(form, "id"));
   else await db.from("horarios_extra").delete().eq("fecha", s(form, "fecha"));
   revalidatePath("/panel", "layout");
@@ -389,7 +394,7 @@ export async function quitarDiaExtra(form: FormData) {
 // ───────── Días sin clases (vacaciones de Barbi) ─────────
 export async function agregarAusencia(_: Resultado, form: FormData): Promise<Resultado> {
   await requireAdmin();
-  const db = createAdminClient();
+  const db = await dbProfe();
   const desde = s(form, "desde"), hasta = s(form, "hasta") || s(form, "desde"), motivo = s(form, "motivo") || "Barbi no da clases";
   if (!desde || hasta < desde) return { error: "Revisá las fechas." };
   await db.from("ausencias").insert({ desde, hasta, motivo });
@@ -404,14 +409,14 @@ export async function agregarAusencia(_: Resultado, form: FormData): Promise<Res
 
 export async function quitarAusencia(form: FormData) {
   await requireAdmin();
-  const db = createAdminClient();
+  const db = await dbProfe();
   const { data: a } = await db.from("ausencias").select("*").eq("id", s(form, "id")).single();
   if (!a) return;
   await db.from("ausencias").delete().eq("id", a.id);
   await db.from("lessons").delete().eq("status", "cancelada").like("nota", "Sin clases:%")
     .gte("starts_at", `${a.desde}T00:00:00${OFFSET}`).lte("starts_at", finDelDia(a.hasta));
   const desde = a.desde > hoyAR() ? a.desde : hoyAR();
-  if (desde <= a.hasta) await db.rpc("generate_lessons", { p_from: desde, p_to: a.hasta });
+  if (desde <= a.hasta) await createAdminClient().rpc("generate_lessons", { p_from: desde, p_to: a.hasta });
   revalidatePath("/panel", "layout");
 }
 
@@ -421,21 +426,21 @@ export async function agregarHorarioAlumno(_: Resultado, form: FormData): Promis
   const quincenal = form.get("quincenal") === "on";
   const dia = s(form, "dia"), hora = s(form, "hora");
   if (dia === "" || !hora) return { error: "Elegí día y hora." };
-  const db = createAdminClient();
+  const db = await dbProfe();
   const { error } = await db.from("student_slots").insert({
     student_id: s(form, "id"), weekday: Number(dia), start_time: hora, biweekly: quincenal, biweekly_anchor: quincenal ? s(form, "desde") || hoyAR() : null,
     duration_min: duracionEntre(hora, s(form, "hasta")),
   });
   if (error) return { error: "No se pudo agregar." };
   const hasta = new Date(Date.parse(hoyAR()) + 42 * 86_400_000).toISOString().slice(0, 10);
-  const { data: n } = await db.rpc("generate_lessons", { p_from: hoyAR(), p_to: hasta });
+  const { data: n } = await createAdminClient().rpc("generate_lessons", { p_from: hoyAR(), p_to: hasta });
   revalidatePath("/panel", "layout");
   return { ok: `Horario agregado.${n ? ` Se crearon ${n} clases.` : ""}` };
 }
 
 export async function quitarHorarioAlumno(form: FormData) {
   await requireAdmin();
-  const db = createAdminClient();
+  const db = await dbProfe();
   const { data: h } = await db.from("student_slots").select("*").eq("id", s(form, "id")).single();
   if (!h) return;
   await db.from("student_slots").delete().eq("id", h.id);
@@ -467,7 +472,7 @@ export async function registrarPago(_: Resultado, form: FormData): Promise<Resul
     method: s(form, "metodo") || null, concepto: s(form, "concepto") || null, aplica_recargo: false,
     paid_at: estado === "pagado" ? new Date().toISOString() : null,
   };
-  const db = createAdminClient();
+  const db = await dbProfe();
   const { error } = tipo === "mensual"
     ? await db.from("payments").upsert(fila, { onConflict: "student_id,period" })
     : await db.from("payments").insert(fila);
@@ -488,7 +493,7 @@ export async function cargarExtra(_: Resultado, form: FormData): Promise<Resulta
       concepto: cant > 1 ? `${cant} × ${concepto}` : concepto, paid_at: estado === "pagado" ? new Date().toISOString() : null,
     };
   });
-  const { error } = await createAdminClient().from("payments").insert(filas);
+  const { error } = await (await dbProfe()).from("payments").insert(filas);
   revalidatePath("/panel", "layout");
   return error ? { error: "No se pudo cargar." } : { ok: `Cargado a ${filas.length} ${filas.length === 1 ? "persona" : "personas"}.` };
 }
@@ -497,7 +502,7 @@ export async function cargarExtra(_: Resultado, form: FormData): Promise<Resulta
 export async function etiquetarClase(form: FormData) {
   await requireAdmin();
   const nota = s(form, "etiqueta") === "otra" ? s(form, "texto") : s(form, "etiqueta");
-  await createAdminClient().from("lessons").update({ nota: nota || null }).eq("id", s(form, "id"));
+  await (await dbProfe()).from("lessons").update({ nota: nota || null }).eq("id", s(form, "id"));
   revalidatePath("/panel", "layout");
 }
 
@@ -506,21 +511,21 @@ export async function agregarRecordatorio(_: Resultado, form: FormData): Promise
   await requireAdmin();
   const texto = s(form, "texto");
   if (!texto) return { error: "Escribí el recordatorio." };
-  await createAdminClient().from("recordatorios").insert({ texto, student_id: s(form, "alumno") || null, fecha: s(form, "fecha") || null });
+  await (await dbProfe()).from("recordatorios").insert({ texto, student_id: s(form, "alumno") || null, fecha: s(form, "fecha") || null });
   revalidatePath("/panel", "layout");
   return { ok: "Recordatorio guardado." };
 }
 
 export async function marcarRecordatorio(form: FormData) {
   await requireAdmin();
-  await createAdminClient().from("recordatorios").update({ hecho: s(form, "hecho") === "1" }).eq("id", s(form, "id"));
+  await (await dbProfe()).from("recordatorios").update({ hecho: s(form, "hecho") === "1" }).eq("id", s(form, "id"));
   revalidatePath("/panel", "layout");
 }
 
 // ───────── Cambiar una clase a virtual o presencial ─────────
 export async function cambiarModalidad(form: FormData) {
   await requireAdmin();
-  const db = createAdminClient();
+  const db = await dbProfe();
   const { data: c } = await db.from("lessons").select("*, profiles(full_name, email)").eq("id", s(form, "id")).single();
   if (!c) return;
   const online = c.modality !== "online";
@@ -539,7 +544,7 @@ export async function cambiarModalidad(form: FormData) {
 // ───────── Editar una clase desde el calendario ─────────
 export async function moverClase(_: Resultado, form: FormData): Promise<Resultado> {
   await requireAdmin();
-  const db = createAdminClient();
+  const db = await dbProfe();
   const { data: c } = await db.from("lessons").select("*, profiles(full_name, email)").eq("id", s(form, "id")).single();
   if (!c) return { error: "No encontramos la clase." };
   const fecha = s(form, "fecha"), horaNueva = s(form, "hora");
@@ -569,7 +574,7 @@ export async function moverClase(_: Resultado, form: FormData): Promise<Resultad
 
 export async function cancelarClaseAdmin(_: Resultado, form: FormData): Promise<Resultado> {
   await requireAdmin();
-  const db = createAdminClient();
+  const db = await dbProfe();
   const { data: c } = await db.from("lessons").select("*").eq("id", s(form, "id")).single();
   if (!c) return { error: "No encontramos la clase." };
   const motivo = s(form, "motivo");
@@ -584,6 +589,6 @@ export async function cancelarClaseAdmin(_: Resultado, form: FormData): Promise<
 
 export async function restaurarClase(form: FormData) {
   await requireAdmin();
-  const { error } = await createAdminClient().from("lessons").update({ status: "reservada", cancelled_at: null }).eq("id", s(form, "id"));
+  const { error } = await (await dbProfe()).from("lessons").update({ status: "reservada", cancelled_at: null }).eq("id", s(form, "id"));
   if (!error) revalidatePath("/panel", "layout");
 }

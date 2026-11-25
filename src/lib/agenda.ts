@@ -1,5 +1,6 @@
 import { createAdminClient } from "./supabase/server";
 import { hoyAR, OFFSET } from "./reglas";
+import { profeActual } from "./profe";
 
 export type Disponibilidad = { id: string; weekday: number; start_time: string; biweekly: boolean; biweekly_anchor: string | null; active: boolean };
 
@@ -15,15 +16,16 @@ function diaSemana(fecha: string) {
 /** Horarios libres de los próximos `dias` días, como ISO con zona -03:00. */
 export async function horariosLibres(dias = 21, margenHoras = 2) {
   const db = createAdminClient();
+  const profe = await profeActual();
   const desde = hoyAR();
   const hasta = sumarDias(desde, dias);
   const [{ data: disp }, { data: feriados }, { data: bloqueos }, { data: ocupadas }, { data: ausencias }, { data: extras }] = await Promise.all([
-    db.from("availability").select("*").eq("active", true),
-    db.from("holidays").select("date").gte("date", desde).lte("date", hasta),
-    db.from("blocked_slots").select("starts_at, ends_at").lte("starts_at", hasta + "T23:59:59" + OFFSET).gte("ends_at", desde + "T00:00:00" + OFFSET),
-    db.from("lessons").select("starts_at, duration_min").in("status", ["reservada", "asistio"]).gte("starts_at", desde).lte("starts_at", hasta + "T23:59:59" + OFFSET),
-    db.from("ausencias").select("desde, hasta").gte("hasta", desde).lte("desde", hasta),
-    db.from("horarios_extra").select("fecha, start_time").gte("fecha", desde).lte("fecha", hasta),
+    db.from("availability").select("*").eq("profe_id", profe).eq("active", true),
+    db.from("holidays").select("date").eq("profe_id", profe).gte("date", desde).lte("date", hasta),
+    db.from("blocked_slots").select("starts_at, ends_at").eq("profe_id", profe).lte("starts_at", hasta + "T23:59:59" + OFFSET).gte("ends_at", desde + "T00:00:00" + OFFSET),
+    db.from("lessons").select("starts_at, duration_min").eq("profe_id", profe).in("status", ["reservada", "asistio"]).gte("starts_at", desde).lte("starts_at", hasta + "T23:59:59" + OFFSET),
+    db.from("ausencias").select("desde, hasta").eq("profe_id", profe).gte("hasta", desde).lte("desde", hasta),
+    db.from("horarios_extra").select("fecha, start_time").eq("profe_id", profe).gte("fecha", desde).lte("fecha", hasta),
   ]);
   const feriado = new Set((feriados ?? []).map((f) => f.date));
   const tomado = new Set((ocupadas ?? []).map((x) => new Date(x.starts_at).getTime()));

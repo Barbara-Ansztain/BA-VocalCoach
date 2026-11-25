@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/server";
+import { profePrincipal } from "@/lib/profe";
 import { mailNuevaConsulta } from "@/lib/email";
 
 const Esquema = z.object({
@@ -21,7 +22,7 @@ export async function enviarConsulta(_: EstadoConsulta, form: FormData): Promise
   if (!r.success) return { ok: false, error: r.error.issues[0].message };
   const d = r.data;
   const { error } = await createAdminClient().from("consultations").insert({
-    name: d.nombre, email: d.email, phone: d.telefono || null, modality: d.modalidad,
+    profe_id: await profePrincipal(), name: d.nombre, email: d.email, phone: d.telefono || null, modality: d.modalidad,
     experience: d.experiencia, message: d.mensaje || null, tyc_accepted_at: new Date().toISOString(),
   });
   if (error) return { ok: false, error: "No pudimos enviar la consulta. Probá de nuevo en un rato." };

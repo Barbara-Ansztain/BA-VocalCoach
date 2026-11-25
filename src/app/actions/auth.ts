@@ -2,15 +2,16 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { aEmail } from "@/lib/usuario";
 
 export type EstadoForm = { error?: string; ok?: string };
 
 export async function ingresar(_: EstadoForm, form: FormData): Promise<EstadoForm> {
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithPassword({
-    email: String(form.get("email")), password: String(form.get("password")),
+    email: aEmail(String(form.get("email") ?? "")), password: String(form.get("password")),
   });
-  if (error) return { error: "Mail o contraseña incorrectos." };
+  if (error) return { error: "Usuario o contraseña incorrectos." };
   const next = String(form.get("next") || "");
   redirect(next.startsWith("/") && !next.startsWith("//") ? next : "/alumno");
 }
