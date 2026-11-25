@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { connection } from "next/server";
 import { redirect } from "next/navigation";
 import { Logo } from "@/components/Logo";
 import { hayAdmin } from "@/app/actions/primer-uso";
@@ -6,6 +7,7 @@ import { FormPrimerUso } from "./FormPrimerUso";
 
 // Solo funciona una vez: crea la cuenta de Barbi como administradora. Después redirige a /ingresar.
 async function Contenido() {
+  await connection(); // no prerender en build (necesita Supabase en runtime)
   if (await hayAdmin()) redirect("/ingresar");
   return (
     <main className="flex flex-1 items-center justify-center p-6">
