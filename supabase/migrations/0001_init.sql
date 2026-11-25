@@ -4,26 +4,39 @@
 create extension if not exists "pgcrypto";
 
 -- ───────────────────────── Perfiles ─────────────────────────
+-- Un perfil por persona. Los alumnos pueden existir sin cuenta (user_id vacío):
+-- cuando Barbi los invita y crean su contraseña, el perfil se vincula por mail.
 create table public.profiles (
-  id uuid primary key references auth.users on delete cascade,
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid unique references auth.users on delete set null,
   role text not null default 'alumno' check (role in ('admin', 'alumno')),
   full_name text not null default '',
-  email text not null default '',
+  email text,
   phone text,
-  plan text not null default 'suelta' check (plan in ('suelta', 'mensual_2', 'mensual_4')),
+  plan text not null default 'mensual_4' check (plan in ('suelta', 'mensual_2', 'mensual_4')),
   modality text not null default 'presencial' check (modality in ('presencial', 'online')),
-  usual_slot text,                       -- ej. "Jueves 16:00"
+  -- Horario fijo: día (0 = domingo) y hora. Quincenal = cada 15 días desde biweekly_anchor.
+  usual_weekday int check (usual_weekday between 0 and 6),
+  usual_time time,
+  biweekly boolean not null default false,
+  biweekly_anchor date,
+  notes text,
   tyc_accepted_at timestamptz,
   active boolean not null default true,
   created_at timestamptz not null default now()
 );
+create index profiles_email_idx on public.profiles (lower(email));
 
--- Crea el perfil automáticamente cuando se crea un usuario (invitación o registro)
+-- Al crearse un usuario (invitación o alta manual): se vincula al perfil con ese mail, o se crea uno.
 create function public.handle_new_user() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
-  insert into public.profiles (id, email, full_name)
-  values (new.id, new.email, coalesce(new.raw_user_meta_data->>'full_name', ''));
+  update public.profiles set user_id = new.id
+   where user_id is null and lower(email) = lower(new.email);
+  if not found then
+    insert into public.profiles (user_id, email, full_name, plan)
+    values (new.id, new.email, coalesce(new.raw_user_meta_data->>'full_name', ''), 'suelta');
+  end if;
   return new;
 end $$;
 
@@ -33,7 +46,12 @@ create trigger on_auth_user_created
 
 create function public.is_admin() returns boolean
 language sql stable security definer set search_path = public as $$
-  select exists (select 1 from public.profiles where id = auth.uid() and role = 'admin');
+  select exists (select 1 from public.profiles where user_id = auth.uid() and role = 'admin');
+$$;
+
+create function public.my_profile_id() returns uuid
+language sql stable security definer set search_path = public as $$
+  select id from public.profiles where user_id = auth.uid();
 $$;
 
 -- ───────────────────────── Agenda ─────────────────────────
@@ -75,6 +93,7 @@ create table public.lessons (
 );
 create unique index lessons_slot_unique on public.lessons (starts_at)
   where status in ('reservada', 'asistio');
+create index lessons_student_idx on public.lessons (student_id);
 
 create table public.lesson_notes (
   id uuid primary key default gen_random_uuid(),
@@ -102,6 +121,7 @@ create table public.payments (
   created_at timestamptz not null default now()
 );
 create unique index payments_monthly_unique on public.payments (student_id, period) where kind = 'mensual';
+create index payments_student_idx on public.payments (student_id);
 
 -- ───────────────────────── Consultas (formulario público) ─────────────────────────
 create table public.consultations (
@@ -149,6 +169,7 @@ create table public.recordings (
 grant usage on schema public to anon, authenticated, service_role;
 grant select, insert, update, delete on all tables in schema public to authenticated, service_role;
 grant execute on function public.is_admin() to authenticated;
+grant execute on function public.my_profile_id() to authenticated;
 
 -- ───────────────────────── Seguridad (RLS) ─────────────────────────
 alter table public.profiles enable row level security;
@@ -177,15 +198,15 @@ create policy admin_all on public.material_assignments for all using (public.is_
 create policy admin_all on public.recordings for all using (public.is_admin()) with check (public.is_admin());
 
 -- Alumnos: leen lo suyo. Las escrituras pasan por acciones del servidor que validan las reglas.
-create policy own_profile on public.profiles for select using (id = auth.uid());
+create policy own_profile on public.profiles for select using (user_id = auth.uid());
 create policy read_availability on public.availability for select using (auth.uid() is not null);
 create policy read_holidays on public.holidays for select using (auth.uid() is not null);
-create policy own_lessons on public.lessons for select using (student_id = auth.uid());
-create policy own_payments on public.payments for select using (student_id = auth.uid());
-create policy own_recordings on public.recordings for select using (student_id = auth.uid());
-create policy own_assignments on public.material_assignments for select using (student_id = auth.uid());
+create policy own_lessons on public.lessons for select using (student_id = public.my_profile_id());
+create policy own_payments on public.payments for select using (student_id = public.my_profile_id());
+create policy own_recordings on public.recordings for select using (student_id = public.my_profile_id());
+create policy own_assignments on public.material_assignments for select using (student_id = public.my_profile_id());
 create policy assigned_materials on public.materials for select using (
-  exists (select 1 from public.material_assignments a where a.material_id = materials.id and a.student_id = auth.uid())
+  exists (select 1 from public.material_assignments a where a.material_id = materials.id and a.student_id = public.my_profile_id())
 );
 
 -- ───────────────────────── Archivos ─────────────────────────
@@ -197,22 +218,52 @@ on conflict do nothing;
 
 -- Cada alumno sube y lee solo dentro de su carpeta (<user_id>/archivo)
 create policy own_files_read on storage.objects for select using (
-  bucket_id in ('comprobantes', 'grabaciones') and (storage.foldername(name))[1] = auth.uid()::text
+  bucket_id in ('comprobantes', 'grabaciones') and (storage.foldername(name))[1] = public.my_profile_id()::text
 );
 create policy own_files_write on storage.objects for insert with check (
-  bucket_id in ('comprobantes', 'grabaciones') and (storage.foldername(name))[1] = auth.uid()::text
+  bucket_id in ('comprobantes', 'grabaciones') and (storage.foldername(name))[1] = public.my_profile_id()::text
 );
 create policy admin_files on storage.objects for all using (public.is_admin()) with check (public.is_admin());
 
--- ───────────────────────── Datos iniciales ─────────────────────────
--- Horarios de Instagram. Ajustar desde Configuración.
-insert into public.availability (weekday, start_time, biweekly) values
-  (1, '14:30', false),
-  (2, '11:00', false),
-  (2, '14:30', false),
-  (3, '17:00', false),
-  (4, '15:00', true),
-  (5, '17:00', false);
+-- ───────────────────────── Clases de horario fijo ─────────────────────────
+-- Crea las clases de cada alumno activo con horario fijo entre dos fechas.
+-- Saltea feriados y horarios ya ocupados; no duplica. Devuelve cuántas creó.
+create function public.generate_lessons(p_from date, p_to date) returns int
+language plpgsql security definer set search_path = public as $$
+declare
+  r record; d date; inicio timestamptz; nueva uuid; creadas int := 0;
+begin
+  for r in select * from profiles
+           where role = 'alumno' and active and usual_weekday is not null and usual_time is not null loop
+    for d in select g::date from generate_series(p_from, p_to, interval '1 day') g loop
+      continue when extract(dow from d) <> r.usual_weekday;
+      continue when exists (select 1 from holidays h where h.date = d);
+      continue when r.biweekly and r.biweekly_anchor is not null and ((d - r.biweekly_anchor) / 7) % 2 <> 0;
+      inicio := (d + r.usual_time) at time zone 'America/Argentina/Buenos_Aires';
+      continue when exists (select 1 from lessons l where l.student_id = r.id and l.starts_at = inicio);
+      insert into lessons (student_id, starts_at, modality)
+      values (r.id, inicio, r.modality)
+      on conflict do nothing
+      returning id into nueva;
+      if nueva is not null then
+        creadas := creadas + 1;
+        if r.plan = 'suelta' then
+          insert into payments (student_id, kind, lesson_id, amount) values (r.id, 'suelta', nueva, 50000);
+        end if;
+        nueva := null;
+      end if;
+    end loop;
+  end loop;
+  return creadas;
+end $$;
+revoke execute on function public.generate_lessons(date, date) from public, anon, authenticated;
+grant execute on function public.generate_lessons(date, date) to service_role;
 
--- Después de crear tu usuario, hacete admin:
--- update public.profiles set role = 'admin' where email = 'TU_MAIL';
+-- ───────────────────────── Feriados conocidos ─────────────────────────
+insert into public.holidays (date, name) values
+  ('2026-12-08', 'Inmaculada Concepción'),
+  ('2026-12-25', 'Navidad'),
+  ('2027-01-01', 'Año Nuevo')
+on conflict do nothing;
+
+-- Los horarios y alumnos de Barbi se cargan en 0002_alumnos.sql.

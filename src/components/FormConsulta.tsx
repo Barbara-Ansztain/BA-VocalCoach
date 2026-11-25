@@ -3,8 +3,9 @@
 import { useActionState } from "react";
 import { enviarConsulta, type EstadoConsulta } from "@/app/actions/consulta";
 import { AceptarTyc } from "./Tyc";
+import type { SeccionTyc } from "@/lib/tyc";
 
-export function FormConsulta() {
+export function FormConsulta({ tyc }: { tyc: SeccionTyc[] }) {
   const [estado, accion, enviando] = useActionState<EstadoConsulta, FormData>(enviarConsulta, { ok: false });
   if (estado.ok)
     return (
@@ -14,7 +15,7 @@ export function FormConsulta() {
       </div>
     );
   return (
-    <form action={accion} className="tarjeta grid flex-[1.4_1_420px] grid-cols-1 gap-4 p-8 sm:grid-cols-2">
+    <form action={accion} className="tarjeta grid min-w-0 flex-[1.4_1_340px] grid-cols-1 gap-4 p-5 sm:grid-cols-2 sm:p-8">
       <h2 className="titulo text-3xl sm:col-span-2">Escribime y coordinamos</h2>
       <label className="etiqueta">Nombre<input name="nombre" required className="campo" placeholder="Tu nombre" /></label>
       <label className="etiqueta">Mail<input name="email" type="email" required className="campo" placeholder="tu@mail.com" /></label>
@@ -28,7 +29,7 @@ export function FormConsulta() {
       <label className="etiqueta sm:col-span-2">¿Qué te gustaría trabajar?
         <textarea name="mensaje" rows={3} className="campo" placeholder="Una audición, ganar confianza, cuidar la voz..." />
       </label>
-      <div className="sm:col-span-2"><AceptarTyc /></div>
+      <div className="sm:col-span-2"><AceptarTyc secciones={tyc} /></div>
       {estado.error && <p className="text-sm font-bold text-[#9B2C2C] sm:col-span-2">{estado.error}</p>}
       <button disabled={enviando} className="btn-primario sm:col-span-2">{enviando ? "Enviando..." : "Enviar consulta"}</button>
     </form>

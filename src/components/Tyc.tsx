@@ -1,12 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { TYC, TYC_CIERRE } from "@/lib/tyc";
+import { TYC_CIERRE, type SeccionTyc } from "@/lib/tyc";
 
-export function TycTexto() {
+export function TycTexto({ secciones }: { secciones: SeccionTyc[] }) {
   return (
     <div className="flex max-h-[52vh] flex-col gap-2.5 overflow-y-auto rounded-2xl bg-white p-5 text-sm leading-relaxed">
-      {TYC.map((s) => (
+      {secciones.map((s) => (
         <div key={s.titulo} className="flex flex-col gap-2">
           <h3 className="mt-1 text-[13px] font-bold uppercase tracking-[1.5px] text-petroleo">{s.titulo}</h3>
           {s.items.map((i) => <p key={i}>• {i}</p>)}
@@ -18,7 +18,7 @@ export function TycTexto() {
 }
 
 /** Casilla "Leí y acepto" con link que abre los términos en una ventana. */
-export function AceptarTyc({ name = "tyc" }: { name?: string }) {
+export function AceptarTyc({ secciones, name = "tyc" }: { secciones: SeccionTyc[]; name?: string }) {
   const [abierto, setAbierto] = useState(false);
   const [aceptado, setAceptado] = useState(false);
   return (
@@ -37,7 +37,7 @@ export function AceptarTyc({ name = "tyc" }: { name?: string }) {
           <div className="flex w-full max-w-2xl flex-col gap-4 rounded-3xl bg-crema p-6 sm:p-8" onClick={(e) => e.stopPropagation()}>
             <h2 className="titulo text-3xl">Antes de empezar</h2>
             <p className="text-[15px]">Estas son mis pautas, por una cuestión de orden y respeto por el espacio.</p>
-            <TycTexto />
+            <TycTexto secciones={secciones} />
             <div className="flex flex-wrap justify-end gap-3">
               <button type="button" className="btn-secundario" onClick={() => setAbierto(false)}>Volver</button>
               <button type="button" className="btn-primario" onClick={() => { setAceptado(true); setAbierto(false); }}>

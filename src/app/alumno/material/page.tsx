@@ -13,7 +13,7 @@ export default async function MaterialAlumno() {
   }));
   return (
     <>
-      <h1 className="titulo text-4xl">Tu material</h1>
+      <h1 className="font-serif font-normal text-3xl leading-tight sm:text-4xl lg:text-5xl">Tu material</h1>
       {items.length === 0 && <p className="tarjeta">Barbi todavía no te asignó material.</p>}
       <div className="grid gap-3 sm:grid-cols-2">
         {items.map((m) => (

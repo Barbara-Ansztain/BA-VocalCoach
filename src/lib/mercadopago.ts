@@ -5,12 +5,12 @@ function cliente() {
   return new MercadoPagoConfig({ accessToken: process.env.MP_ACCESS_TOKEN });
 }
 
-export async function crearPreferencia(p: { pagoId: string; titulo: string; monto: number; email: string }) {
+export async function crearPreferencia(p: { pagoId: string; titulo: string; monto: number; email?: string }) {
   const site = process.env.NEXT_PUBLIC_SITE_URL!;
   const pref = await new Preference(cliente()).create({
     body: {
       items: [{ id: p.pagoId, title: p.titulo, quantity: 1, unit_price: p.monto, currency_id: "ARS" }],
-      payer: { email: p.email },
+      ...(p.email ? { payer: { email: p.email } } : {}),
       external_reference: p.pagoId,
       notification_url: `${site}/api/mercadopago/webhook`,
       back_urls: {

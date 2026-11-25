@@ -7,14 +7,14 @@ const FROM = process.env.EMAIL_FROM ?? "BA - Vocal Coach <onboarding@resend.dev>
 function plantilla(titulo: string, cuerpo: string) {
   return `<div style="font-family:Arial,sans-serif;background:#F5EFE6;padding:32px;color:#49304F">
   <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:16px;padding:28px">
-    <p style="margin:0 0 4px;font-size:28px;color:#9B7BB5;font-family:Georgia,serif">BA</p>
-    <p style="margin:0 0 24px;font-size:11px;letter-spacing:3px;text-transform:uppercase">Vocal Coach</p>
+    <p style="margin:0 0 24px;font-family:Georgia,serif"><span style="font-size:28px;color:#9B7BB5">BA</span> <em style="font-size:18px">Vocal Coach</em></p>
     <h1 style="font-family:Georgia,serif;font-weight:400;font-size:26px;margin:0 0 16px">${titulo}</h1>
     ${cuerpo}
   </div></div>`;
 }
 
-async function enviar(to: string, subject: string, html: string) {
+async function enviar(to: string | null | undefined, subject: string, html: string) {
+  if (!to) return;
   if (!resend) {
     console.warn("[email] RESEND_API_KEY no configurada; no se envió:", subject, "→", to);
     return;
@@ -24,7 +24,7 @@ async function enviar(to: string, subject: string, html: string) {
 
 /** Aviso de agenda al reservar o reprogramar. Si es online lleva el link de Zoom. */
 export async function mailClaseAgendada(p: {
-  to: string; nombre: string; inicio: string; modalidad: "presencial" | "online"; zoomUrl?: string | null; reprogramada?: boolean;
+  to: string | null; nombre: string; inicio: string; modalidad: "presencial" | "online"; zoomUrl?: string | null; reprogramada?: boolean;
 }) {
   const cuando = fechaHora(p.inicio);
   const donde = p.modalidad === "online"

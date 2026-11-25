@@ -9,7 +9,8 @@ async function IngresarContenido({ searchParams }: Pick<PageProps<"/ingresar">, 
     <main className="flex flex-1 items-center justify-center p-6">
       <div className="flex w-full max-w-md flex-col gap-6">
         <Link href="/"><Logo /></Link>
-        <h1 className="titulo text-4xl">Ingresar</h1>
+        <h1 className="font-serif font-normal text-3xl leading-tight sm:text-4xl lg:text-5xl">Ingresar</h1>
+        {sp.creada && <p className="rounded-xl bg-menta p-3 text-sm">¡Cuenta creada! Ingresá con tu mail y contraseña.</p>}
         {sp.error === "link" && <p className="rounded-xl bg-lila-suave p-3 text-sm">El link venció o ya se usó. Pedí uno nuevo.</p>}
         <FormIngresar next={typeof sp.next === "string" ? sp.next : ""} />
         <p className="text-sm">¿Todavía no tenés cuenta? <Link href="/#consulta" className="font-bold">Escribime</Link> y te doy acceso.</p>

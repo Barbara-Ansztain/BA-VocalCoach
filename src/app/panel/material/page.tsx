@@ -10,10 +10,10 @@ export default async function Material() {
   ]);
   return (
     <>
-      <h1 className="titulo text-4xl">Material</h1>
+      <h1 className="font-serif font-normal text-3xl leading-tight sm:text-4xl lg:text-5xl">Material</h1>
       <div className="flex flex-wrap items-start gap-6">
         <FormAccion action={subirMaterial} className="tarjeta flex flex-[1_1_340px] flex-col gap-3">
-          <h2 className="titulo text-2xl">Agregar material</h2>
+          <h2 className="font-serif text-xl sm:text-2xl">Agregar material</h2>
           <label className="etiqueta">Título<input name="titulo" required className="campo" placeholder="4 vocalizaciones · rutina diaria" /></label>
           <label className="etiqueta">Tipo
             <select name="tipo" className="campo"><option value="vocalizacion">Vocalización</option><option value="partitura">Partitura</option><option value="pista">Pista</option><option value="audio">Audio</option><option value="otro">Otro</option></select>
@@ -23,7 +23,7 @@ export default async function Material() {
           <button className="btn-primario">Agregar</button>
         </FormAccion>
         <FormAccion action={asignarMaterial} className="tarjeta flex flex-[1_1_340px] flex-col gap-3">
-          <h2 className="titulo text-2xl">Asignar a alumnos</h2>
+          <h2 className="font-serif text-xl sm:text-2xl">Asignar a alumnos</h2>
           <label className="etiqueta">Material
             <select name="material" required className="campo">{materiales?.map((m) => <option key={m.id} value={m.id}>{m.title}</option>)}</select>
           </label>

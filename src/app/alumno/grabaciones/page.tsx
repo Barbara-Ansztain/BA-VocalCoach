@@ -13,7 +13,7 @@ export default async function Grabaciones() {
   })));
   return (
     <>
-      <h1 className="titulo text-4xl">Grabaciones</h1>
+      <h1 className="font-serif font-normal text-3xl leading-tight sm:text-4xl lg:text-5xl">Grabaciones</h1>
       <FormAccion action={subirGrabacion} className="tarjeta flex flex-wrap items-end gap-3 bg-menta">
         <label className="etiqueta flex-[1_1_200px]">Título (opcional)<input name="titulo" className="campo" placeholder="Ej. ejercicio de sirena" /></label>
         <label className="etiqueta flex-[1_1_200px]">Audio<input type="file" name="archivo" accept="audio/*" required className="campo py-2" /></label>

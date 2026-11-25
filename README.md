@@ -8,13 +8,13 @@ Página para administrar las clases de canto de Barbi Ansztain: página pública
 
 1. `npm install`
 2. Copiá `.env.example` a `.env.local` y completá las claves.
-3. En Supabase → SQL Editor, corré `supabase/migrations/0001_init.sql`.
+3. Base de datos: las migraciones de `supabase/migrations/` (0001 a 0004) ya están aplicadas en el proyecto `xyvdgicltwvojmsnmmbm`, con los 31 alumnos actuales y sus horarios. En un proyecto nuevo, correlas en orden.
 4. En Supabase → Authentication → URL Configuration:
    - Site URL: `http://localhost:3000` (después, el dominio real)
    - Redirect URLs: agregá `http://localhost:3000/auth/confirm` y la del dominio real.
-5. Creá tu usuario (Authentication → Users → Add user) y hacelo admin:
+5. Creá tu usuario (Authentication → Users → Add user, con "Auto Confirm User") y hacelo admin:
    ```sql
-   update public.profiles set role = 'admin', full_name = 'Barbi Ansztain', tyc_accepted_at = now() where email = 'TU_MAIL';
+   update public.profiles set role = 'admin', full_name = 'Barbi Ansztain', tyc_accepted_at = now(), usual_weekday = null where email = 'TU_MAIL';
    ```
 6. `npm run dev` y entrá a http://localhost:3000. Iniciá sesión en `/ingresar` y vas a ir a `/panel`.
 
@@ -27,12 +27,14 @@ Página para administrar las clases de canto de Barbi Ansztain: página pública
 | Alumno | Reserva en los horarios libres, reprograma o cancela con 24 h de aviso, paga con Mercado Pago o sube el comprobante, ve el material asignado y sube grabaciones. |
 | Barbi | Ve el día en **Hoy**, la semana en **Agenda**, marca asistencias, confirma pagos, genera las cuotas del mes, comenta grabaciones y configura horarios y feriados. |
 
-### Reglas (en `src/lib/reglas.ts`)
+### Reglas (editables en Panel → Configuración)
 - Clase suelta $50.000 · Mensual 2 clases $100.000 · Mensual 4 clases $155.000.
 - Cuota mensual del 1 al 10; desde el 11 se suma un 10% de recargo automáticamente.
 - Cancelación con 24 h o más: la clase se recupera (si era clase suelta, no se cobra). Con menos de 24 h: mensual pierde la clase y la suelta se cobra igual.
 - Mensuales: el alumno puede reservar hasta su cupo (2 o 4 por mes). Las extras, por ejemplo para recuperar feriados en meses de 5 semanas, las carga Barbi desde Agenda.
 - Feriados: se cargan en Configuración y ese día no se puede reservar.
+- Horario fijo: cada alumno tiene día y hora (semanal o cada 15 días). Las clases se crean hasta 6 semanas adelante con "Generar clases" en Agenda (no duplica).
+- Alumnos cargados sin cuenta: en su ficha se carga el mail y se toca "Mandar invitación".
 - Al reservar o reprogramar se manda un mail. Si la clase es online, se crea la reunión de Zoom y el link va en ese mail.
 
 ## Integraciones

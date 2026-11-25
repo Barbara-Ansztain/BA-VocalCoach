@@ -8,7 +8,7 @@ export default async function Consultas() {
   const { data } = await supabase.from("consultations").select("*").order("created_at", { ascending: false }).limit(50);
   return (
     <>
-      <h1 className="titulo text-4xl">Consultas</h1>
+      <h1 className="font-serif font-normal text-3xl leading-tight sm:text-4xl lg:text-5xl">Consultas</h1>
       <p className="text-sm">Llegan desde el formulario de la página (con los términos aceptados). “Dar acceso” le manda un mail para que cree su contraseña.</p>
       {!data?.length && <p className="tarjeta">Todavía no hay consultas.</p>}
       {data?.map((c) => (

@@ -5,7 +5,8 @@ import { redirect } from "next/navigation";
 import { requireAlumno } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/server";
 import { horariosLibres } from "@/lib/agenda";
-import { avisoATiempo, DURACION_CLASE_MIN, NOMBRE_PLAN, PRECIOS, recargoCuota } from "@/lib/reglas";
+import { avisoATiempo, conceptoPago, DURACION_CLASE_MIN, NOMBRE_PLAN, recargoCuota } from "@/lib/reglas";
+import { getConfig, getPrecios } from "@/lib/config";
 import { borrarReunionZoom, crearReunionZoom } from "@/lib/zoom";
 import { mailClaseAgendada } from "@/lib/email";
 import { crearPreferencia } from "@/lib/mercadopago";
@@ -60,7 +61,7 @@ export async function reservar(_: Resultado, form: FormData): Promise<Resultado>
   const r = await crearClase(alumno, inicio);
   if ("error" in r) return { error: r.error };
   if (alumno.plan === "suelta") {
-    await db.from("payments").insert({ student_id: alumno.id, kind: "suelta", lesson_id: r.clase.id, amount: PRECIOS.suelta });
+    await db.from("payments").insert({ student_id: alumno.id, kind: "suelta", lesson_id: r.clase.id, amount: (await getPrecios(inicio)).suelta });
   }
   revalidatePath("/alumno");
   redirect("/alumno?reservada=1");
@@ -83,7 +84,7 @@ export async function cancelar(form: FormData) {
   const clase = await claseDelAlumno(String(form.get("id")), alumno.id);
   if (!clase || clase.status !== "reservada") return;
   const db = createAdminClient();
-  const aTiempo = avisoATiempo(clase.starts_at);
+  const aTiempo = avisoATiempo(clase.starts_at, await getConfig());
   await db.from("lessons").update({ status: aTiempo ? "cancelada" : "perdida", cancelled_at: new Date().toISOString() }).eq("id", clase.id);
   if (aTiempo) {
     if (clase.zoom_meeting_id) await borrarReunionZoom(clase.zoom_meeting_id).catch(() => {});
@@ -98,7 +99,8 @@ export async function reprogramar(_: Resultado, form: FormData): Promise<Resulta
   const clase = await claseDelAlumno(String(form.get("id")), alumno.id);
   const inicio = String(form.get("inicio"));
   if (!clase || clase.status !== "reservada") return { error: "No encontramos esa clase." };
-  if (!avisoATiempo(clase.starts_at)) return { error: "Falta menos de 24 h: ya no se puede reprogramar." };
+  const cfg = await getConfig();
+  if (!avisoATiempo(clase.starts_at, cfg)) return { error: `Falta menos de ${cfg.horasAviso} h: ya no se puede reprogramar.` };
   if (!(await validarHorario(inicio))) return { error: "Ese horario ya no está disponible." };
 
   const db = createAdminClient();
@@ -123,9 +125,9 @@ export async function pagarConMercadoPago(form: FormData) {
   const alumno = await requireAlumno();
   const pago = await pagoDelAlumno(String(form.get("id")), alumno.id);
   if (!pago || pago.status !== "pendiente") return;
-  const recargo = pago.kind === "mensual" && pago.period ? recargoCuota(pago.amount, pago.period) : 0;
-  const titulo = pago.kind === "mensual" ? `Cuota ${pago.period} · ${NOMBRE_PLAN[alumno.plan]}` : "Clase suelta de canto";
-  const pref = await crearPreferencia({ pagoId: pago.id, titulo, monto: pago.amount + recargo, email: alumno.email });
+  const recargo = pago.kind === "mensual" && pago.period && pago.aplica_recargo !== false ? recargoCuota(pago.amount, pago.period, await getConfig()) : 0;
+  const titulo = conceptoPago(pago) + (pago.kind === "mensual" ? ` · ${NOMBRE_PLAN[alumno.plan]}` : "");
+  const pref = await crearPreferencia({ pagoId: pago.id, titulo, monto: pago.amount + recargo, email: alumno.email ?? undefined });
   await createAdminClient().from("payments").update({ mp_preference_id: pref.id, surcharge: recargo }).eq("id", pago.id);
   redirect(pref.url);
 }
@@ -143,7 +145,7 @@ export async function subirComprobante(_: Resultado, form: FormData): Promise<Re
   const ruta = `${alumno.id}/${pago.id}-${Date.now()}.${archivo.name.split(".").pop()}`;
   const { error } = await db.storage.from("comprobantes").upload(ruta, archivo, { contentType: archivo.type });
   if (error) return { error: "No se pudo subir el archivo." };
-  const recargo = pago.kind === "mensual" && pago.period ? recargoCuota(pago.amount, pago.period) : 0;
+  const recargo = pago.kind === "mensual" && pago.period && pago.aplica_recargo !== false ? recargoCuota(pago.amount, pago.period, await getConfig()) : 0;
   await db.from("payments").update({ status: "en_revision", method: "transferencia", receipt_path: ruta, surcharge: recargo }).eq("id", pago.id);
   revalidatePath("/alumno/pagos");
   return { ok: "¡Listo! Barbi lo va a confirmar." };
@@ -161,4 +163,21 @@ export async function subirGrabacion(_: Resultado, form: FormData): Promise<Resu
   await db.from("recordings").insert({ student_id: alumno.id, file_path: ruta, title: String(form.get("titulo") || "") || null });
   revalidatePath("/alumno/grabaciones");
   return { ok: "Grabación subida." };
+}
+
+/** "Me voy de vacaciones": pasa una clase presencial a virtual (con link de Zoom) para no perderla. */
+export async function pasarAVirtual(form: FormData) {
+  const alumno = await requireAlumno();
+  const clase = await claseDelAlumno(String(form.get("id")), alumno.id);
+  if (!clase || clase.status !== "reservada" || clase.modality === "online" || new Date(clase.starts_at).getTime() < Date.now()) return;
+  const zoom = await crearReunionZoom({ tema: `Clase de canto · ${alumno.full_name}`, inicio: new Date(clase.starts_at), duracionMin: clase.duration_min })
+    .catch(() => null);
+  await createAdminClient().from("lessons").update({
+    modality: "online", zoom_join_url: zoom?.joinUrl ?? null, zoom_meeting_id: zoom?.id ?? null, nota: "Pasada a virtual por el alumno",
+  }).eq("id", clase.id);
+  await mailClaseAgendada({
+    to: alumno.email, nombre: alumno.full_name.split(" ")[0] || alumno.full_name, inicio: clase.starts_at, modalidad: "online", zoomUrl: zoom?.joinUrl, reprogramada: true,
+  }).catch(console.error);
+  revalidatePath("/alumno");
+  redirect("/alumno?virtual=1");
 }

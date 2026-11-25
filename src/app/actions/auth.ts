@@ -38,7 +38,7 @@ export async function completarBienvenida(_: EstadoForm, form: FormData): Promis
   const { createAdminClient } = await import("@/lib/supabase/server");
   await createAdminClient().from("profiles").update({
     tyc_accepted_at: new Date().toISOString(), ...(nombre ? { full_name: nombre } : {}),
-  }).eq("id", data.user.id);
+  }).eq("user_id", data.user.id);
   redirect("/alumno");
 }
 

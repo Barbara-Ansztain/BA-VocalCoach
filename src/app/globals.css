@@ -18,11 +18,12 @@ body {
   color: var(--color-ciruela);
 }
 
-@utility btn { @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 font-bold transition-colors disabled:opacity-50; }
+@utility btn { @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-center font-bold transition-colors disabled:opacity-50 sm:px-5 sm:py-3; }
 @utility btn-primario { @apply btn bg-petroleo text-white hover:bg-ciruela; }
 @utility btn-secundario { @apply btn border-[1.5px] border-petroleo font-normal text-petroleo hover:bg-menta; }
-@utility tarjeta { @apply rounded-2xl bg-white p-6; }
+@utility tarjeta { @apply rounded-2xl bg-white p-4 sm:p-6; }
 @utility titulo { @apply font-serif font-normal; }
 @utility campo { @apply w-full rounded-xl border-[1.5px] border-[#D9CCE4] bg-white px-3.5 py-3 text-ciruela outline-none focus:border-petroleo; }
 @utility etiqueta { @apply flex flex-col gap-1.5 text-sm font-medium; }
 @utility chip { @apply inline-block whitespace-nowrap rounded-full px-3 py-1 text-xs; }
+

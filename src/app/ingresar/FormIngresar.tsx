@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { ingresar, recuperar, type EstadoForm } from "@/app/actions/auth";
+import { CampoContrasena } from "@/components/CampoContrasena";
 
 export function FormIngresar({ next }: { next: string }) {
   const [modo, setModo] = useState<"login" | "recuperar">("login");
@@ -11,7 +12,7 @@ export function FormIngresar({ next }: { next: string }) {
       <input type="hidden" name="next" value={next} />
       <label className="etiqueta">Mail<input name="email" type="email" required className="campo" autoComplete="email" /></label>
       {modo === "login" && (
-        <label className="etiqueta">Contraseña<input name="password" type="password" required className="campo" autoComplete="current-password" /></label>
+        <label className="etiqueta">Contraseña<CampoContrasena /></label>
       )}
       {estado.error && <p className="text-sm font-bold text-[#9B2C2C]">{estado.error}</p>}
       {estado.ok && <p className="rounded-xl bg-menta p-3 text-sm">{estado.ok}</p>}
