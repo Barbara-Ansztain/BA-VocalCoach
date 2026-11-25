@@ -15,7 +15,7 @@ export async function createClient() {
           try {
             list.forEach(({ name, value, options }) => cookieStore.set(name, value, options));
           } catch {
-            // Llamado desde un Server Component: el proxy refresca la sesión.
+            // Llamado desde un Server Component: el middleware refresca la sesión.
           }
         },
       },
